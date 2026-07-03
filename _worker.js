@@ -44,11 +44,9 @@ export default {
         if (bodyText) {
           let bodyJson = JSON.parse(bodyText);
 
-          // Force Nvidia to turn off thinking ONLY for GLM-5.2
+          // Use the official SGLang/Nvidia parameter to turn off thinking for GLM-5.2
           if (bodyJson.model && bodyJson.model.includes("glm-5.2")) {
-            bodyJson.enable_thinking = false;
-            bodyJson.reasoning_effort = "none";
-            bodyJson.thinking = { type: "disabled" };
+            bodyJson.chat_template_kwargs = { "enable_thinking": false };
           }
 
           requestOptions.body = JSON.stringify(bodyJson);
