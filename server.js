@@ -15,7 +15,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.json());
+// Parse JSON bodies up to 100MB to support massive roleplay chat histories
+app.use(express.json({ limit: '100mb' }));
 
 // Main POST handler for chat completions (with built-in keepalive heartbeat)
 app.post('/*', async (req, res) => {
