@@ -15,7 +15,21 @@ app.use((req, res, next) => {
     next();
 });
 
-// We DO NOT use express.json() here to preserve the raw request stream and avoid any 413 limits!
+// Helper function to read the raw request stream as a string with no size limits
+const getRawBody = (req) => {
+    return new Promise((resolve, reject) => {
+        let data = '';
+        req.on('data', chunk => {
+            data += chunk;
+        });
+        req.on('end', () => {
+            resolve(data);
+        });
+        req.on('error', err => {
+            reject(err);
+        });
+    });
+};
 
 // Main POST handler for chat completions (with built-in keepalive heartbeat)
 app.post('/*', async (req, res) => {
@@ -42,14 +56,16 @@ app.post('/*', async (req, res) => {
     }, 15000);
 
     try {
+        // Read the raw request body as a string safely (no size limits)
+        const bodyText = await getRawBody(req);
+
         const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
                 'Authorization': req.headers['authorization'],
                 'Content-Type': req.headers['content-type'] || 'application/json'
             },
-            body: req, // Forward the raw undisturbed request stream directly!
-            duplex: 'half' // Required by Node.js fetch when passing a stream body
+            body: bodyText
         });
 
         clearInterval(interval);
