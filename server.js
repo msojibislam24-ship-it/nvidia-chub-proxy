@@ -15,8 +15,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Parse JSON bodies up to 100MB to support massive roleplay chat histories
-app.use(express.json({ limit: '100mb' }));
+// We DO NOT use express.json() here to preserve the raw request stream and avoid any 413 limits!
 
 // Main POST handler for chat completions (with built-in keepalive heartbeat)
 app.post('/*', async (req, res) => {
@@ -47,9 +46,10 @@ app.post('/*', async (req, res) => {
             method: 'POST',
             headers: {
                 'Authorization': req.headers['authorization'],
-                'Content-Type': 'application/json'
+                'Content-Type': req.headers['content-type'] || 'application/json'
             },
-            body: JSON.stringify(req.body)
+            body: req, // Forward the raw undisturbed request stream directly!
+            duplex: 'half' // Required by Node.js fetch when passing a stream body
         });
 
         clearInterval(interval);
