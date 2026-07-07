@@ -1,71 +1,92 @@
 const express = require('express');
 const cors = require('cors');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// DIAGNOSTIC TEST ENDPOINT
-app.get('/test-nvidia', async (req, res) => {
-    console.log("=== DIAGNOSTIC: Testing direct connection to Nvidia ===");
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout limit
+// Safely parse incoming request bodies as raw text to avoid any stream hangs
+app.use(express.text({ type: '*/*', limit: '50mb' }));
 
+// DIAGNOSTIC ENDPOINT (Kept for testing)
+app.get('/test-nvidia', async (req, res) => {
+    try {
         const testRes = await fetch("https://integrate.api.nvidia.com/v1/models", {
             method: "GET",
-            headers: {
-                "Authorization": "Bearer test-key"
-            },
-            signal: controller.signal
+            headers: { "Authorization": "Bearer test-key" }
         });
-        clearTimeout(timeoutId);
-
-        console.log(`=== DIAGNOSTIC SUCCESS: Nvidia responded with status ${testRes.status} ===`);
-        res.json({ 
-            connection: "Success", 
-            status: testRes.status, 
-            message: "Nvidia's servers are accessible from this Render instance!" 
-        });
+        res.json({ connection: "Success", status: testRes.status });
     } catch (err) {
-        console.error("=== DIAGNOSTIC FAILED: connection blocked ===", err);
-        res.status(500).json({ 
-            connection: "Failed", 
-            error: err.message, 
-            message: "Nvidia's firewall appears to be blocking this Render server's IP address." 
-        });
+        res.status(500).json({ connection: "Failed", error: err.message });
     }
 });
 
-// Log all incoming requests to the proxy
+// Log incoming requests
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] Incoming ${req.method} request to: ${req.url}`);
     next();
 });
 
-// Automatically forward everything to Nvidia
-app.use('/', createProxyMiddleware({
-    target: 'https://integrate.api.nvidia.com/v1',
-    changeOrigin: true,
-    pathRewrite: {
-        '^/v1': '/', 
-    },
-    onProxyReq: (proxyReq, req, res) => {
-        proxyReq.setHeader('host', 'integrate.api.nvidia.com');
-    },
-    onProxyRes: (proxyRes, req, res) => {
-        console.log(`[NVIDIA RESPONSE] Status Code: ${proxyRes.statusCode}`);
+// Native stream-based forwarder
+app.all('*', async (req, res) => {
+    // Strip /v1 if present in the incoming URL to match Nvidia's endpoints
+    let cleanPath = req.path;
+    if (cleanPath.startsWith("/v1")) {
+        cleanPath = cleanPath.substring(3);
+    }
+
+    const queryParams = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const targetUrl = `https://integrate.api.nvidia.com/v1${cleanPath}${queryParams}`;
+    
+    console.log(`-> Forwarding to Nvidia: ${targetUrl}`);
+
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers.connection;
+    delete headers['content-length']; // Let fetch recalculate size automatically
+
+    const fetchOptions = {
+        method: req.method,
+        headers: headers,
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+        fetchOptions.body = req.body;
+    }
+
+    try {
+        const nvidiaRes = await fetch(targetUrl, fetchOptions);
+        console.log(`[NVIDIA RESPONSE] Status Code: ${nvidiaRes.status}`);
+
+        // Set permissive CORS headers on response
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
         res.setHeader('Access-Control-Allow-Headers', '*');
-    },
-    onError: (err, req, res) => {
+
+        // Forward all headers from Nvidia except CORS/Encoding headers
+        nvidiaRes.headers.forEach((value, key) => {
+            if (!key.toLowerCase().startsWith('access-control-') && key.toLowerCase() !== 'transfer-encoding') {
+                res.setHeader(key, value);
+            }
+        });
+
+        res.status(nvidiaRes.status);
+
+        // Stream response back to Chub AI chunk-by-chunk
+        const reader = nvidiaRes.body.getReader();
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+        }
+        res.end();
+
+    } catch (err) {
         console.error('[PROXY ERROR]:', err);
         res.status(500).json({ error: err.message });
     }
-}));
+});
 
 app.listen(PORT, () => {
     console.log(`Nvidia Proxy running on port ${PORT}`);
