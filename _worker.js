@@ -1,6 +1,7 @@
 export default {
   async fetch(request, env, ctx) {
     const corsHeaders = {
+      "Access-Control-Origin": "*",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
       "Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") || "*",
@@ -29,15 +30,13 @@ export default {
     headers.set("Accept", incomingAccept || "application/json");
 
     let body = null;
-    let parsedBody = null;
 
     if (request.method !== "GET" && request.method !== "HEAD") {
       const text = await request.text();
 
       if (text && incomingContentType && incomingContentType.includes("application/json")) {
         try {
-          const data = JSON.parse(text);console.log(JSON.stringify(data, null, 2));
-          parsedBody = data;
+          const data = JSON.parse(text);
 
           // Remove fields that often break compatibility on OpenAI-like proxies
           const disallowed = [
@@ -63,8 +62,13 @@ export default {
           // Make sure model exists; keep Chub's selection if provided
           if (!data.model) data.model = "glm-5.2";
 
-          // Some clients send null messages or weird system wrappers
-          if (!Array.isArray(data.messages)) {
+          // Deep-clean messages to remove the "name" field and keep ONLY "role" and "content"
+          if (Array.isArray(data.messages)) {
+            data.messages = data.messages.map(msg => ({
+              role: msg.role,
+              content: msg.content
+            }));
+          } else {
             return new Response(JSON.stringify({
               error: "Invalid request: messages must be an array"
             }), {
@@ -101,35 +105,11 @@ export default {
     ].forEach((h) => upstreamHeaders.delete(h));
 
     try {
-      console.log("========== CHUB REQUEST ==========");
-
-if (parsedBody) {
-  console.log(JSON.stringify({
-    model: parsedBody.model,
-    stream: parsedBody.stream,
-    temperature: parsedBody.temperature,
-    max_tokens: parsedBody.max_tokens,
-    messageCount: parsedBody.messages?.length,
-    firstRole: parsedBody.messages?.[0]?.role,
-    lastRole: parsedBody.messages?.[parsedBody.messages.length - 1]?.role,
-    keys: Object.keys(parsedBody)
-  }, null, 2));
-}
-
-console.log("===============================");
       const upstreamResponse = await fetch(targetUrl, {
         method: request.method,
         headers: upstreamHeaders,
         body: request.method !== "GET" && request.method !== "HEAD" ? body : null,
       });
-      
-      const responseText = await upstreamResponse.clone().text();
-
-console.log("========== SUBAXIS ==========");
-console.log("STATUS:", upstreamResponse.status);
-console.log("URL:", targetUrl);
-console.log("BODY:", responseText);
-console.log("=============================");
 
       const responseHeaders = new Headers(upstreamResponse.headers);
       for (const [k, v] of Object.entries(corsHeaders)) {
