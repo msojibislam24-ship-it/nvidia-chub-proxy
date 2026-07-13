@@ -48,14 +48,17 @@ export default {
         if (bodyText) {
           let bodyJson = JSON.parse(bodyText);
 
-          // Bare minimum standard parameters needed for roleplay to guarantee compatibility
-          const essentialKeys = [
+          // FORCE the model to glm-5.2 so Subaxis always accepts the request
+          bodyJson.model = "glm-5.2";
+
+          // List of official standard OpenAI Chat Completion parameters
+          const allowedKeys = [
             "model", "messages", "temperature", "max_tokens", "stream"
           ];
 
-          // Create an ultra-clean request body keeping ONLY the essential keys
+          // Create an ultra-clean request body keeping ONLY the allowed standard keys
           let cleanBody = {};
-          for (const key of essentialKeys) {
+          for (const key of allowedKeys) {
             if (bodyJson[key] !== undefined) {
               cleanBody[key] = bodyJson[key];
             }
