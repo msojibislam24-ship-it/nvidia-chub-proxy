@@ -101,6 +101,22 @@ export default {
     ].forEach((h) => upstreamHeaders.delete(h));
 
     try {
+      console.log("========== CHUB REQUEST ==========");
+
+if (parsedBody) {
+  console.log(JSON.stringify({
+    model: parsedBody.model,
+    stream: parsedBody.stream,
+    temperature: parsedBody.temperature,
+    max_tokens: parsedBody.max_tokens,
+    messageCount: parsedBody.messages?.length,
+    firstRole: parsedBody.messages?.[0]?.role,
+    lastRole: parsedBody.messages?.[parsedBody.messages.length - 1]?.role,
+    keys: Object.keys(parsedBody)
+  }, null, 2));
+}
+
+console.log("===============================");
       const upstreamResponse = await fetch(targetUrl, {
         method: request.method,
         headers: upstreamHeaders,
