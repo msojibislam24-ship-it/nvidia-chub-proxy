@@ -32,176 +32,30 @@ export default {
     newHeaders.delete("http-referer");
     newHeaders.delete("x-title");
 
-    // Safely construct request options (GET/HEAD requests cannot have a body)
+    // Safely construct request options
     const requestOptions = {
       method: request.method,
       headers: newHeaders,
+      body: request.method !== "GET" && request.method !== "HEAD" ? request.body : null,
       redirect: 'follow'
     };
 
-    let isStreaming = false;
-
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      try {
-        // Clone the request first to read the body safely without disturbing the original stream
-        const clonedRequest = request.clone();
-        const bodyText = await clonedRequest.text();
-        
-        if (bodyText) {
-          let bodyJson = JSON.parse(bodyText);
-
-          // FORCE the model to glm-5.2 so Subaxis always accepts it
-          bodyJson.model = "glm-5.2";
-          isStreaming = bodyJson.stream === true;
-
-          // DEEP-CLEAN each message in your chat history to remove hidden non-standard fields
-          if (bodyJson.messages && Array.isArray(bodyJson.messages)) {
-            bodyJson.messages = bodyJson.messages.map(msg => {
-              let cleanMsg = {
-                role: msg.role,
-                content: ""
-              };
-
-              // Flatten any complex array-based text contents back to plain strings
-              if (Array.isArray(msg.content)) {
-                let textContent = "";
-                for (let part of msg.content) {
-                  if (part.type === "text" && part.text) {
-                    textContent += part.text;
-                  }
-                }
-                cleanMsg.content = textContent;
-              } else if (typeof msg.content === "string") {
-                cleanMsg.content = msg.content;
-              }
-
-              // Keep name if present (it is officially supported)
-              if (msg.name) {
-                cleanMsg.name = msg.name;
-              }
-
-              return cleanMsg;
-            });
-          }
-
-          // List of official standard OpenAI Chat Completion parameters
-          const allowedKeys = [
-            "model", "messages", "temperature", "max_tokens", "stream"
-          ];
-
-          // Create an ultra-clean request body keeping ONLY the allowed standard keys
-          let cleanBody = {};
-          for (const key of allowedKeys) {
-            if (bodyJson[key] !== undefined) {
-              cleanBody[key] = bodyJson[key];
-            }
-          }
-
-          requestOptions.body = JSON.stringify(cleanBody);
-          newHeaders.delete("content-length"); // Let fetch recalculate size
-        } else {
-          requestOptions.body = null;
-        }
-      } catch (e) {
-        requestOptions.body = request.body;
-      }
-    }
-
-    let interval;
-
     try {
-      if (isStreaming) {
-        // ------------------ STREAMING FLOW ------------------
-        const responseHeaders = new Headers();
-        responseHeaders.set('Content-Type', 'text/event-stream');
-        responseHeaders.set('Cache-Control', 'no-cache');
-        responseHeaders.set('Connection', 'keep-alive');
-        responseHeaders.set("Access-Control-Allow-Origin", "*");
-        responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-        responseHeaders.set("Access-Control-Allow-Headers", "*");
+      const response = await fetch(targetUrl, requestOptions);
+      
+      // Clone response headers and append permissive CORS headers so Chub AI can read the response
+      const responseHeaders = new Headers(response.headers);
+      const requestedHeaders = request.headers.get("Access-Control-Request-Headers") || "*";
+      responseHeaders.set("Access-Control-Allow-Origin", "*");
+      responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+      responseHeaders.set("Access-Control-Allow-Headers", requestedHeaders);
 
-        // Send standard SSE keep-alive comments to bypass timeout
-        const { readable, writable } = new TransformStream();
-        const writer = writable.getWriter();
-        const encoder = new TextEncoder();
-
-        writer.write(encoder.encode(': keepalive\n\n'));
-        interval = setInterval(() => {
-          writer.write(encoder.encode(': keepalive\n\n'));
-        }, 15000);
-
-        // Fetch using the filtered request body
-        fetch(targetUrl, requestOptions).then(async (response) => {
-          clearInterval(interval);
-          if (!response.ok) {
-            const errorText = await response.text();
-            writer.write(encoder.encode(`data: ${JSON.stringify({ error: errorText })}\n\n`));
-            return writer.close();
-          }
-
-          const reader = response.body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            writer.write(value);
-          }
-          writer.close();
-        }).catch((err) => {
-          clearInterval(interval);
-          writer.write(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));
-          writer.close();
-        });
-
-        return new Response(readable, {
-          status: 200,
-          headers: responseHeaders,
-        });
-
-      } else {
-        // ------------------ NON-STREAMING FLOW ------------------
-        const responseHeaders = new Headers();
-        responseHeaders.set('Content-Type', 'application/json');
-        responseHeaders.set('Cache-Control', 'no-cache');
-        responseHeaders.set('Connection', 'keep-alive');
-        responseHeaders.set("Access-Control-Allow-Origin", "*");
-        responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
-        responseHeaders.set("Access-Control-Allow-Headers", "*");
-
-        const { readable, writable } = new TransformStream();
-        const writer = writable.getWriter();
-        const encoder = new TextEncoder();
-
-        // Write a blank space immediately and every 15s to keep the gateway alive
-        writer.write(encoder.encode(' '));
-        interval = setInterval(() => {
-          writer.write(encoder.encode(' '));
-        }, 15000);
-
-        // Fetch using the filtered request body
-        fetch(targetUrl, requestOptions).then(async (response) => {
-          clearInterval(interval);
-          if (!response.ok) {
-            const errorText = await response.text();
-            writer.write(encoder.encode(errorText));
-            return writer.close();
-          }
-
-          const responseText = await response.text();
-          writer.write(encoder.encode(responseText));
-          writer.close();
-        }).catch((err) => {
-          clearInterval(interval);
-          writer.write(encoder.encode(JSON.stringify({ error: err.message })));
-          writer.close();
-        });
-
-        return new Response(readable, {
-          status: 200,
-          headers: responseHeaders,
-        });
-      }
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
     } catch (error) {
-      if (interval) clearInterval(interval);
       return new Response(JSON.stringify({ error: error.message }), {
         status: 500,
         headers: { 
