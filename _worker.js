@@ -50,9 +50,39 @@ export default {
         if (bodyText) {
           let bodyJson = JSON.parse(bodyText);
 
-          // Force the model to glm-5.2 so Subaxis always accepts it
+          // FORCE the model to glm-5.2 so Subaxis always accepts it
           bodyJson.model = "glm-5.2";
           isStreaming = bodyJson.stream === true;
+
+          // DEEP-CLEAN each message in your chat history to remove hidden non-standard fields
+          if (bodyJson.messages && Array.isArray(bodyJson.messages)) {
+            bodyJson.messages = bodyJson.messages.map(msg => {
+              let cleanMsg = {
+                role: msg.role,
+                content: ""
+              };
+
+              // Flatten any complex array-based text contents back to plain strings
+              if (Array.isArray(msg.content)) {
+                let textContent = "";
+                for (let part of msg.content) {
+                  if (part.type === "text" && part.text) {
+                    textContent += part.text;
+                  }
+                }
+                cleanMsg.content = textContent;
+              } else if (typeof msg.content === "string") {
+                cleanMsg.content = msg.content;
+              }
+
+              // Keep name if present (it is officially supported)
+              if (msg.name) {
+                cleanMsg.name = msg.name;
+              }
+
+              return cleanMsg;
+            });
+          }
 
           // List of official standard OpenAI Chat Completion parameters
           const allowedKeys = [
