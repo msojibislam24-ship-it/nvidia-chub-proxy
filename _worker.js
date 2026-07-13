@@ -104,6 +104,14 @@ export default {
         headers: upstreamHeaders,
         body: request.method !== "GET" && request.method !== "HEAD" ? body : null,
       });
+      
+      const responseText = await upstreamResponse.clone().text();
+
+console.log("========== SUBAXIS ==========");
+console.log("STATUS:", upstreamResponse.status);
+console.log("URL:", targetUrl);
+console.log("BODY:", responseText);
+console.log("=============================");
 
       const responseHeaders = new Headers(upstreamResponse.headers);
       for (const [k, v] of Object.entries(corsHeaders)) {
