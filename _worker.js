@@ -46,8 +46,25 @@ export default {
         const bodyText = await clonedRequest.text();
         
         if (bodyText) {
-          // Pass the body text exactly as-is to let Subaxis handle the payload
-          requestOptions.body = bodyText;
+          let bodyJson = JSON.parse(bodyText);
+
+          // List of official standard OpenAI Chat Completion parameters
+          const allowedKeys = [
+            "model", "messages", "temperature", "top_p", "n", "stream", 
+            "stop", "max_tokens", "presence_penalty", "frequency_penalty", 
+            "logit_bias", "user", "response_format", "seed", "tools", "tool_choice"
+          ];
+
+          // Create a clean request body keeping ONLY the allowed standard keys
+          let cleanBody = {};
+          for (const key of allowedKeys) {
+            if (bodyJson[key] !== undefined) {
+              cleanBody[key] = bodyJson[key];
+            }
+          }
+
+          requestOptions.body = JSON.stringify(cleanBody);
+          newHeaders.delete("content-length"); // Let fetch recalculate size
         } else {
           requestOptions.body = null;
         }
