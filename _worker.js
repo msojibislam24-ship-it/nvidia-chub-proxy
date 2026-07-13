@@ -21,12 +21,16 @@ export default {
       cleanPath = cleanPath.substring(3);
     }
     
-    // Route directly to Nvidia's official OpenAI-compatible endpoint
-    const targetUrl = "https://integrate.api.nvidia.com/v1" + cleanPath + url.search;
+    // Route directly to Subaxis's official OpenAI-compatible endpoint
+    const targetUrl = "https://subaxis.dev/v1" + cleanPath + url.search;
 
     const newHeaders = new Headers(request.headers);
-    // Delete host header to prevent SSL certificate mismatches on Nvidia's servers
+    // Delete headers to prevent SSL certificate mismatches and WAF blocks on Subaxis's servers
     newHeaders.delete("host");
+    newHeaders.delete("origin");
+    newHeaders.delete("referer");
+    newHeaders.delete("http-referer");
+    newHeaders.delete("x-title");
 
     // Safely construct request options (GET/HEAD requests cannot have a body)
     const requestOptions = {
@@ -42,20 +46,12 @@ export default {
         const bodyText = await clonedRequest.text();
         
         if (bodyText) {
-          let bodyJson = JSON.parse(bodyText);
-
-          // Use Nvidia's official template parameter to turn off thinking for GLM-5.2
-          if (bodyJson.model && bodyJson.model.includes("glm-5.2")) {
-            bodyJson.chat_template_kwargs = { "enable_thinking": false };
-          }
-
-          requestOptions.body = JSON.stringify(bodyJson);
-          newHeaders.delete("content-length"); // Let fetch recalculate size
+          // Pass the body text exactly as-is to let Subaxis handle the payload
+          requestOptions.body = bodyText;
         } else {
           requestOptions.body = null;
         }
       } catch (e) {
-        // Fallback to the original undisturbed stream if parsing fails
         requestOptions.body = request.body;
       }
     }
