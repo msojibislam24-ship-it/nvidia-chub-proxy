@@ -36,7 +36,7 @@ export default {
 
       if (text && incomingContentType && incomingContentType.includes("application/json")) {
         try {
-          const data = JSON.parse(text);
+          const data = JSON.parse(text);console.log(JSON.stringify(data, null, 2));
           parsedBody = data;
 
           // Remove fields that often break compatibility on OpenAI-like proxies
