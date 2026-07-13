@@ -29,6 +29,7 @@ export default {
     headers.set("Accept", incomingAccept || "application/json");
 
     let body = null;
+    let parsedBody = null;
 
     if (request.method !== "GET" && request.method !== "HEAD") {
       const text = await request.text();
@@ -36,6 +37,7 @@ export default {
       if (text && incomingContentType && incomingContentType.includes("application/json")) {
         try {
           const data = JSON.parse(text);
+          parsedBody = data;
 
           // Remove fields that often break compatibility on OpenAI-like proxies
           const disallowed = [
