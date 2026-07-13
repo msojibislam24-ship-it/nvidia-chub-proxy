@@ -48,16 +48,14 @@ export default {
         if (bodyText) {
           let bodyJson = JSON.parse(bodyText);
 
-          // List of official standard OpenAI Chat Completion parameters
-          const allowedKeys = [
-            "model", "messages", "temperature", "top_p", "n", "stream", 
-            "stop", "max_tokens", "presence_penalty", "frequency_penalty", 
-            "logit_bias", "user", "response_format", "seed", "tools", "tool_choice"
+          // Bare minimum standard parameters needed for roleplay to guarantee compatibility
+          const essentialKeys = [
+            "model", "messages", "temperature", "max_tokens", "stream"
           ];
 
-          // Create a clean request body keeping ONLY the allowed standard keys
+          // Create an ultra-clean request body keeping ONLY the essential keys
           let cleanBody = {};
-          for (const key of allowedKeys) {
+          for (const key of essentialKeys) {
             if (bodyJson[key] !== undefined) {
               cleanBody[key] = bodyJson[key];
             }
