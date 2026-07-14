@@ -38,28 +38,7 @@ app.all('/*', (req, res) => {
     delete options.headers['host'];
     delete options.headers['content-length']; // let Node recalculate it for the stringified body
 
-    let keepAliveInterval = null;
-
-    // Only start heartbeats on POST requests (actual message generations)
-    if (req.method === 'POST') {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-
-        // Send a silent SSE comment every 20 seconds to keep the Cloudflare connection active
-        keepAliveInterval = setInterval(() => {
-            if (!res.writableEnded) {
-                res.write(': keepalive\n\n');
-            }
-        }, 20000);
-    }
-
     const proxyReq = https.request(options, (proxyRes) => {
-        // Clear the heartbeats as soon as Nvidia begins responding
-        if (keepAliveInterval) {
-            clearInterval(keepAliveInterval);
-        }
-
         // Forward status and non-encoding headers
         res.status(proxyRes.statusCode);
         for (const [key, value] of Object.entries(proxyRes.headers)) {
@@ -73,9 +52,6 @@ app.all('/*', (req, res) => {
     });
 
     proxyReq.on('error', (error) => {
-        if (keepAliveInterval) {
-            clearInterval(keepAliveInterval);
-        }
         console.error('Proxy Error:', error);
         if (!res.headersSent) {
             res.status(500).json({ error: error.message });
@@ -86,12 +62,19 @@ app.all('/*', (req, res) => {
 
     // Write the body to the proxy request if applicable
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
-        proxyReq.write(JSON.stringify(req.body));
+        let bodyJson = req.body;
+        
+        // Force Nvidia to turn off thinking for GLM-5.2 to speed up generation and avoid timeouts
+        if (bodyJson.model && bodyJson.model.includes("glm-5.2")) {
+            bodyJson.chat_template_kwargs = { "enable_thinking": false };
+        }
+        
+        proxyReq.write(JSON.stringify(bodyJson));
     }
 
     proxyReq.end();
 });
 
 app.listen(PORT, () => {
-    console.log(`Nvidia Render Proxy (HTTPS Native) running on port ${PORT}`);
+    console.log(`Nvidia Render Proxy (No-Thinking Native) running on port ${PORT}`);
 });
